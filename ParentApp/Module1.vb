@@ -1,50 +1,50 @@
-﻿Imports System.Threading
+﻿'' This Sample Code is provided for the purpose of illustration only 
+'' And Is Not intended to be used in a production environment.   
+
+Imports System.IO
+Imports System.IO.Pipes
 
 Module Module1
 
-    Private myProcess As Process = New Process()
-    Private elapsedTime As Integer
-    Private eventHandled As Boolean
-
     Sub Main()
-        Dim fileName As String = "BrowserHost.exe"
-        Dim arguments As String = String.Empty
+        Const browserHostFileName As String = "BrowserHost.exe"
+        Const htmlFileName = "HTMLPage1.html"
+        Const BEGINSYNC As String = "SYNC-BEGIN"
+        Const ENDSYNC As String = "SYNC-END"
 
-        elapsedTime = 0
-        eventHandled = False
+        Using pipeServer As AnonymousPipeServerStream = New AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable)
+            Dim arguments = htmlFileName & " " & pipeServer.GetClientHandleAsString()
+            Dim startInfo As ProcessStartInfo = New ProcessStartInfo(browserHostFileName, arguments)
+            startInfo.UseShellExecute = False
+            Using browserHostProcess As Process = Process.Start(startInfo)
+                browserHostProcess.EnableRaisingEvents = True
+                pipeServer.DisposeLocalCopyOfClientHandle()
+                Using sr As StreamReader = New StreamReader(pipeServer)
+                    Dim temp As String
+                    Console.WriteLine("[SERVER] Waiting for stream to start")
+                    sr.Peek()
 
-        Try
-            myProcess.StartInfo.FileName = fileName
-            myProcess.StartInfo.Arguments = arguments
-            myProcess.StartInfo.CreateNoWindow = True
-            myProcess.EnableRaisingEvents = True
-            AddHandler myProcess.Exited, AddressOf MyProcess_Exited
-            myProcess.Start()
-        Catch ex As Exception
-            Console.WriteLine($"An error occurred trying to print ""{fileName}"":\n" & ex.Message)
-            Return
-        End Try
+                    Console.WriteLine("[SERVER] Waiting for begin sync message")
+                    Do
+                        temp = sr.ReadLine()
+                    Loop While (Not temp.StartsWith(BEGINSYNC))
+                    Console.WriteLine("[SERVER] Found BEGINSYNC")
 
-        Const SLEEP_AMOUNT As Integer = 100
-        Const TIMEOUT As Integer = 30000
+                    'Read the data
+                    'Stop when find endsync
+                    Do
+                        temp = sr.ReadLine()
+                        Console.WriteLine("[SERVER] Echo: " + temp)
+                    Loop While (Not temp.StartsWith(ENDSYNC))
+                    Console.WriteLine("[SERVER] Found ENDSYNC")
+                    browserHostProcess.CloseMainWindow()
+                End Using
 
-        While (Not eventHandled)
-            elapsedTime += SLEEP_AMOUNT
-            If (elapsedTime > TIMEOUT) Then
-                Console.WriteLine($"Exiting due to exceeding timeout of {TIMEOUT} ms.")
-                Exit While
-            End If
-            Thread.Sleep(SLEEP_AMOUNT)
-        End While
+            End Using
+        End Using
 
         Console.WriteLine("Press enter to exit")
         Console.ReadLine()
     End Sub
 
-    Private Sub MyProcess_Exited(sender As Object, e As System.EventArgs)
-        eventHandled = True
-        Console.WriteLine($"Exit time:    {myProcess.ExitTime}")
-        Console.WriteLine($"Exit code:    {myProcess.ExitCode}")
-        Console.WriteLine($"Elapsed time: {elapsedTime}")
-    End Sub
 End Module
